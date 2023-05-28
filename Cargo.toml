@@ -1,0 +1,16 @@
+[package]
+edition = "2021"
+name = "serde_structuredqs"
+version = "0.1.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+form_urlencoded = "1.1.0"
+itoa = "1.0.6"
+ryu = "1.0.13"
+serde = "1.0.163"
+thiserror = "1.0.40"
+
+[dev-dependencies]
+serde_derive = "1.0.163"
