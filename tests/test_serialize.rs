@@ -15,8 +15,8 @@ fn flat_struct() {
         c: String::from("foo"),
     };
     assert_eq!(
-        serde_structuredqs::to_string(&params),
-        Ok(String::from("a=100&b=3.14&c=foo"))
+        serde_structuredqs::to_string(&params).unwrap(),
+        String::from("a=100&b=3.14&c=foo")
     );
 }
 
@@ -41,8 +41,8 @@ fn serialize_nested_struct() {
         c: ChildElement { d: 2, e: 3 },
     };
     assert_eq!(
-        serde_structuredqs::to_string(&params),
-        Ok(String::from("a=1&b=100&c.d=2&c.e=3"))
+        serde_structuredqs::to_string(&params).unwrap(),
+        String::from("a=1&b=100&c.d=2&c.e=3")
     )
 }
 
@@ -84,9 +84,7 @@ fn serialize_search_params() {
     };
 
     assert_eq!(
-        serde_structuredqs::to_string(&params),
-        Ok(String::from(
-            "keyword=foo%2Cbar&limit=20&filter.category=ABC&filter.difficulty.from=800"
-        ))
+        serde_structuredqs::to_string(&params).unwrap(),
+        String::from("keyword=foo%2Cbar&limit=20&filter.category=ABC&filter.difficulty.from=800")
     )
 }
