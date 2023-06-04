@@ -49,7 +49,6 @@ impl<'a> Level<'a> {
     /// Returns error if `self` is not a map, or already has an entry for that
     /// key.
     pub fn insert_map_value(&mut self, key: Cow<'a, str>, value: Cow<'a, str>) {
-        println!("insert map value at key: {}, value: {}", key, value);
         if let Level::Nested(ref mut map) = *self {
             match map.entry(key) {
                 Entry::Occupied(mut o) => {
