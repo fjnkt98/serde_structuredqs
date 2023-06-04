@@ -2,10 +2,8 @@ use crate::de::{
     deserializer::Deserializer,
     error::{Error, Result},
     parsablestring::ParsableStringDeserializer,
-    utility::{replace_space, QS_ENCODE_SET},
 };
 
-use percent_encoding::percent_encode;
 use serde::de;
 use serde::forward_to_deserialize_any;
 
@@ -28,7 +26,7 @@ macro_rules! deserialize_primitive {
                 Level::Flat(x) => ParsableStringDeserializer(x).$method(visitor),
                 Level::Invalid(e) => Err(de::Error::custom(e)),
                 Level::UnInitialized => Err(de::Error::custom(
-                    "attempted to deserialize unitialised value",
+                    "attempted to deserialize uninitialized value",
                 )),
             }
         }
@@ -49,37 +47,32 @@ impl<'a> Level<'a> {
     /// Returns error if `self` is not a map, or already has an entry for that
     /// key.
     pub fn insert_map_value(&mut self, key: Cow<'a, str>, value: Cow<'a, str>) {
-        if let Level::Nested(ref mut map) = *self {
-            match map.entry(key) {
-                Entry::Occupied(mut o) => {
-                    let key = o.key();
-                    let error = if key.contains('[') {
-                        let newkey = percent_encode(key.as_bytes(), QS_ENCODE_SET)
-                            .map(replace_space)
-                            .collect::<String>();
-                        format!("Multiple values for one key: \"{}\"\nInvalid field contains an encoded bracket -- did you mean to use non-strict mode?\n  https://docs.rs/serde_qs/latest/serde_qs/#strict-vs-non-strict-modes", newkey)
-                    } else {
-                        format!("Multiple values for one key: \"{}\"", key)
-                    };
-                    // Throw away old result; map is now invalid anyway.
-                    let _ = o.insert(Level::Invalid(error));
-                }
-                Entry::Vacant(vm) => {
-                    // Map is empty, result is None
-                    let _ = vm.insert(Level::Flat(value));
+        match *self {
+            Level::Nested(ref mut map) => {
+                match map.entry(key) {
+                    Entry::Occupied(mut o) => {
+                        let key = o.key();
+                        let error = format!("multiple values for one key: \"{}\"", key);
+                        // Throw away old result; map is now invalid anyway.
+                        let _ = o.insert(Level::Invalid(error));
+                    }
+                    Entry::Vacant(vm) => {
+                        // Map is empty, result is None
+                        let _ = vm.insert(Level::Flat(value));
+                    }
                 }
             }
-        } else if let Level::UnInitialized = *self {
-            let mut map = BTreeMap::default();
-            let _ = map.insert(key, Level::Flat(value));
-            *self = Level::Nested(map);
-        } else {
-            *self = Level::Invalid(
-                "Attempted to insert map value into \
-                 non-map structure"
-                    .to_string(),
-            );
-        }
+            Level::UnInitialized => {
+                let mut map = BTreeMap::default();
+                let _ = map.insert(key, Level::Flat(value));
+                *self = Level::Nested(map);
+            }
+            _ => {
+                *self = Level::Invalid(
+                    "attempted to insert map value into non-map structure".to_string(),
+                );
+            }
+        };
     }
 }
 
@@ -97,15 +90,11 @@ impl<'de> de::EnumAccess<'de> for LevelDeserializer<'de> {
             Level::Flat(x) => Ok((
                 seed.deserialize(ParsableStringDeserializer(x))?,
                 LevelDeserializer(Level::Invalid(
-                    "this value can only \
-                     deserialize to a \
-                     UnitVariant"
-                        .to_string(),
+                    "this value can only deserialize to a UnitVariant".to_string(),
                 )),
             )),
             _ => Err(de::Error::custom(
-                "this value can only deserialize to a \
-                 UnitVariant",
+                "this value can only deserialize to a UnitVariant",
             )),
         }
     }
@@ -143,8 +132,7 @@ impl<'a> LevelDeserializer<'a> {
             Level::Nested(map) => Ok(Deserializer::with_map(map)),
             Level::Invalid(e) => Err(de::Error::custom(e)),
             l => Err(de::Error::custom(format!(
-                "could not convert {:?} to \
-                 Deserializer<'a>",
+                "could not convert {:?} to Deserializer<'a>",
                 l
             ))),
         }
@@ -226,8 +214,7 @@ impl<'de> de::Deserializer<'de> for LevelDeserializer<'de> {
             }
             Level::Invalid(e) => Err(de::Error::custom(e)),
             Level::UnInitialized => Err(de::Error::custom(
-                "attempted to deserialize unitialised \
-                 value",
+                "attempted to deserialize uninitialized value",
             )),
         }
     }
