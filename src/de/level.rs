@@ -9,7 +9,6 @@ use serde::forward_to_deserialize_any;
 
 use std::borrow::Cow;
 use std::collections::btree_map::{BTreeMap, Entry};
-use std::iter::Iterator;
 use std::str;
 
 macro_rules! deserialize_primitive {
@@ -201,24 +200,6 @@ impl<'de> de::Deserializer<'de> for LevelDeserializer<'de> {
         }
     }
 
-    fn deserialize_newtype_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value>
-    where
-        V: de::Visitor<'de>,
-    {
-        match self.0 {
-            Level::Nested(_) => self.into_deserializer()?.deserialize_map(visitor),
-            Level::Flat(_) => {
-                // For a newtype_struct, attempt to deserialize a flat value as a
-                // single element sequence.
-                visitor.visit_seq(LevelSeq(vec![self.0].into_iter()))
-            }
-            Level::Invalid(e) => Err(de::Error::custom(e)),
-            Level::UnInitialized => Err(de::Error::custom(
-                "attempted to deserialize uninitialized value",
-            )),
-        }
-    }
-
     /// given the hint that this is a map, will first
     /// attempt to deserialize ordered sequences into a map
     /// otherwise, follows the any code path
@@ -248,7 +229,7 @@ impl<'de> de::Deserializer<'de> for LevelDeserializer<'de> {
         bytes
         byte_buf
         unit_struct
-        // newtype_struct
+        newtype_struct
         tuple_struct
         struct
         identifier
@@ -256,21 +237,5 @@ impl<'de> de::Deserializer<'de> for LevelDeserializer<'de> {
         ignored_any
         seq
         // map
-    }
-}
-
-pub(crate) struct LevelSeq<'a, I: Iterator<Item = Level<'a>>>(I);
-
-impl<'de, I: Iterator<Item = Level<'de>>> de::SeqAccess<'de> for LevelSeq<'de, I> {
-    type Error = Error;
-    fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>>
-    where
-        T: de::DeserializeSeed<'de>,
-    {
-        if let Some(v) = self.0.next() {
-            seed.deserialize(LevelDeserializer(v)).map(Some)
-        } else {
-            Ok(None)
-        }
     }
 }
