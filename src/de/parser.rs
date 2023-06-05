@@ -13,48 +13,20 @@ use std::iter::Iterator;
 use std::slice::Iter;
 use std::str;
 
+/// Parse x-www-form-urlencoded string into structured key-value mappings.
 pub struct Parser<'a> {
     inner: &'a [u8],
     iter: Iter<'a, u8>,
-    index: usize,
-    acc: (usize, usize),
-    peeked: Option<&'a u8>,
-    depth: i32,
-    state: ParsingState,
-}
-
-enum ParsingState {
-    Init,
-    Key,
-    Value,
+    head: isize,
+    tail: usize,
 }
 
 impl<'a> Iterator for Parser<'a> {
     type Item = &'a u8;
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        match self.peeked.take() {
-            Some(v) => Some(v),
-            None => {
-                self.index += 1;
-                self.acc.1 += 1;
-                self.iter.next()
-            }
-        }
-    }
-}
-
-impl<'a> Parser<'a> {
-    #[inline]
-    fn peek(&mut self) -> Option<<Self as Iterator>::Item> {
-        if self.peeked.is_some() {
-            self.peeked
-        } else if let Some(x) = self.next() {
-            self.peeked = Some(x);
-            Some(x)
-        } else {
-            None
-        }
+        self.head += 1;
+        self.iter.next()
     }
 }
 
@@ -63,20 +35,20 @@ impl<'a> Parser<'a> {
         Parser {
             inner: encoded,
             iter: encoded.iter(),
-            acc: (0, 0),
-            index: 0,
-            peeked: None,
-            depth: 0,
-            state: ParsingState::Init,
+            head: -1, // In the initial state, the head will start at index -1 to ensure that the head is 0 when iter() is first called.
+            tail: 0,
         }
     }
 
-    fn clear_acc(&mut self) {
-        self.acc = (self.index, self.index);
+    /// Shrink the range from the tail to the head.
+    /// The tail will be positioned one after the head.
+    fn shrink(&mut self) {
+        self.tail = self.head as usize + 1;
     }
 
+    /// Collect the URL-decoded string slice from the tail to the head with decoding and shrink the tail.
     fn collect_str(&mut self) -> Result<Cow<'a, str>> {
-        let replaced = replace_plus(&self.inner[self.acc.0..self.acc.1 - 1]);
+        let replaced = replace_plus(&self.inner[self.tail..self.head as usize]);
         let decoder = percent_encoding::percent_decode(&replaced);
 
         let maybe_decoded = decoder
@@ -86,7 +58,7 @@ impl<'a> Parser<'a> {
         let ret: Result<Cow<'a, str>> = match maybe_decoded {
             Cow::Borrowed(_) => match replaced {
                 Cow::Borrowed(_) => {
-                    let res = str::from_utf8(&self.inner[self.acc.0..self.acc.1 - 1])
+                    let res = str::from_utf8(&self.inner[self.tail..self.head as usize])
                         .map_err(|e| Error::custom(e.to_string()))?;
                     Ok(Cow::Borrowed(res))
                 }
@@ -97,10 +69,11 @@ impl<'a> Parser<'a> {
             },
             Cow::Owned(owned) => Ok(Cow::Owned(owned)),
         };
-        self.clear_acc();
+        self.shrink();
         ret.map_err(Error::from)
     }
 
+    /// Parse the entire input string into a Level struct, construct a Deserializer, and return it.
     pub(crate) fn as_deserializer(&mut self) -> Result<Deserializer<'a>> {
         let map = BTreeMap::default();
         let mut root = Level::Nested(map);
@@ -113,23 +86,28 @@ impl<'a> Parser<'a> {
         Ok(Deserializer { iter, value: None })
     }
 
+    /// The top-level parsing function. It checks the first character to determine the type of key
+    /// and call the parsing function.
     fn parse(&mut self, node: &mut Level<'a>) -> Result<bool> {
-        // First character determines parsing type
+        // Check the first character to determine parsing type
         match self.next() {
             Some(x) => {
                 match *x {
-                    b'.' => loop {
-                        self.clear_acc();
-                        let key = self.parse_key(b'.', false)?;
+                    // Set the tail position and parse key and value, which is the child of current node.
+                    b'.' => {
+                        self.shrink();
+                        let key = self.parse_key()?;
                         self.parse_map_value(key, node)?;
                         return Ok(true);
-                    },
+                    }
+                    // Set the tail position and continue to next.
                     b'&' => {
-                        self.clear_acc();
+                        self.shrink();
                         Ok(true)
                     }
+                    // Normally parse key and value.
                     _ => {
-                        let key = { self.parse_key(b'.', false)? };
+                        let key = self.parse_key()?;
                         // Root keys are _always_ map values
                         self.parse_map_value(key, node)?;
                         Ok(true)
@@ -140,30 +118,12 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_key(&mut self, end_on: u8, consume: bool) -> Result<Cow<'a, str>> {
-        self.state = ParsingState::Key;
+    /// Collect the string slice up to the separator character and return the collected key.
+    fn parse_key(&mut self) -> Result<Cow<'a, str>> {
         loop {
-            if let Some(x) = self.peek() {
-                if *x == b'=' {
-                    return self.collect_str();
-                }
-            }
             if let Some(x) = self.next() {
                 match *x {
-                    c if end_on == c => {
-                        if !consume {
-                            self.peeked = Some(x);
-                        }
-                        return self.collect_str();
-                    }
-                    b'=' => {
-                        if end_on != b']' {
-                            self.peeked = Some(x);
-                            return self.collect_str();
-                        }
-                    }
-                    b'&' => {
-                        self.peeked = Some(&b'&');
+                    b'.' | b'=' | b'&' => {
                         return self.collect_str();
                     }
                     _ => {
@@ -181,61 +141,51 @@ impl<'a> Parser<'a> {
     /// The `(key,value)` pair is determined to be corresponding to a map entry,
     /// so parse it as such. The first part of the `key` has been parsed.
     fn parse_map_value(&mut self, key: Cow<'a, str>, node: &mut Level<'a>) -> Result<()> {
-        self.state = ParsingState::Key;
         let res = loop {
-            if let Some(x) = self.peek() {
-                match *x {
-                    b'=' => {
-                        // Key is finished, parse up until the '&' as the value
-                        self.clear_acc();
-                        self.state = ParsingState::Value;
-                        for _ in self.take_while(|b| *b != &b'&') {}
-                        let value: Cow<'a, str> = self.collect_str()?;
-                        node.insert_map_value(key, value);
+            // Check the character that current head is pointing to.
+            match self.inner[self.head as usize] {
+                b'=' => {
+                    // Key is finished, parse up until the '&' as the value.
+                    self.shrink();
+                    for _ in self.take_while(|b| *b != &b'&') {}
+                    let value: Cow<'a, str> = self.collect_str()?;
+                    node.insert_map_value(key, value);
+                    break Ok(());
+                }
+                b'&' => {
+                    // There is no value, so insert empty string.
+                    node.insert_map_value(key, Cow::Borrowed(""));
+                    break Ok(());
+                }
+                b'.' => {
+                    // The next string is a key of the nested map.
+
+                    // If the node is uninitialized, initialize it with empty BTreeMap.
+                    if let Level::UnInitialized = *node {
+                        *node = Level::Nested(BTreeMap::default());
+                    }
+                    // if the node is the map, call the top-level parse function with the node.
+                    if let Level::Nested(ref mut map) = *node {
+                        self.shrink();
+                        let _ = self.parse(map.entry(key).or_insert(Level::UnInitialized))?;
                         break Ok(());
-                    }
-                    b'&' => {
-                        // No value
-                        node.insert_map_value(key, Cow::Borrowed(""));
-                        break Ok(());
-                    }
-                    b'.' => {
-                        // The key continues to another level of nested.
-                        // Add a new unitialised level for this node and continue.
-                        if let Level::UnInitialized = *node {
-                            *node = Level::Nested(BTreeMap::default());
-                        }
-                        if let Level::Nested(ref mut map) = *node {
-                            // By parsing we drop down another level
-                            self.depth -= 1;
-                            // Either take the existing entry, or add a new
-                            // unitialised level
-                            // Use this new node to keep parsing
-                            let _ = self.parse(map.entry(key).or_insert(Level::UnInitialized))?;
-                            break Ok(());
-                        } else {
-                            // We expected to parse into a map here.
-                            break Err(Error::custom(format!(
-                                "tried to insert a \
-                                     new key into {:?}",
-                                node
-                            )));
-                        }
-                    }
-                    _ => {
-                        // Anything else is unexpected since we just finished
-                        // parsing a key.
-                        let _ = self.next();
+                    } else {
+                        // We expected to parse into a map here.
+                        break Err(Error::custom(format!(
+                            "tried to insert a new key into {:?}",
+                            node
+                        )));
                     }
                 }
-            } else {
-                // The string has ended, so the value is empty.
-                node.insert_map_value(key, Cow::Borrowed(""));
-                break Ok(());
+                _ => {
+                    // Break the loop when the iterator is finished.
+                    if let None = self.next() {
+                        break Ok(());
+                    }
+                }
             }
         };
-        // We have finished parsing this level, so go back up a level.
-        self.depth += 1;
+
         res
     }
 }
