@@ -1,10 +1,9 @@
-use crate::de::{
-    deserializer::Deserializer,
+use crate::{
+    de::deserializer::Deserializer,
     error::{Error, Result},
-    parsablestring::ParsableStringDeserializer,
 };
 
-use serde::de;
+use serde::de::{self, Error as _};
 use serde::forward_to_deserialize_any;
 
 use std::borrow::Cow;
@@ -22,11 +21,21 @@ macro_rules! deserialize_primitive {
                     "Expected: {:?}, got a Map",
                     stringify!($ty)
                 ))),
-                Level::Flat(x) => ParsableStringDeserializer(x).$method(visitor),
                 Level::Invalid(e) => Err(de::Error::custom(e)),
                 Level::UnInitialized => Err(de::Error::custom(
                     "attempted to deserialize uninitialized value",
                 )),
+                Level::Flat(x) => {
+                    if let Ok(x) = x.parse::<$ty>() {
+                        visitor.$visit_method(x)
+                    } else {
+                        Err(de::Error::custom(format!(
+                            "Expected {:?}, but got {}",
+                            stringify!($ty),
+                            x
+                        )))
+                    }
+                }
             }
         }
     };
@@ -53,17 +62,17 @@ impl<'a> Level<'a> {
                         let key = o.key();
                         let error = format!("multiple values for one key: \"{}\"", key);
                         // Throw away old result; map is now invalid anyway.
-                        let _ = o.insert(Level::Invalid(error));
+                        o.insert(Level::Invalid(error));
                     }
                     Entry::Vacant(vm) => {
                         // Map is empty, result is None
-                        let _ = vm.insert(Level::Flat(value));
+                        vm.insert(Level::Flat(value));
                     }
                 }
             }
             Level::UnInitialized => {
                 let mut map = BTreeMap::default();
-                let _ = map.insert(key, Level::Flat(value));
+                map.insert(key, Level::Flat(value));
                 *self = Level::Nested(map);
             }
             _ => {
@@ -76,54 +85,6 @@ impl<'a> Level<'a> {
 }
 
 pub(crate) struct LevelDeserializer<'a>(pub Level<'a>);
-
-impl<'de> de::EnumAccess<'de> for LevelDeserializer<'de> {
-    type Error = Error;
-    type Variant = Self;
-
-    fn variant_seed<V>(self, seed: V) -> Result<(V::Value, Self::Variant)>
-    where
-        V: de::DeserializeSeed<'de>,
-    {
-        match self.0 {
-            Level::Flat(x) => Ok((
-                seed.deserialize(ParsableStringDeserializer(x))?,
-                LevelDeserializer(Level::Invalid(
-                    "this value can only deserialize to a UnitVariant".to_string(),
-                )),
-            )),
-            _ => Err(de::Error::custom(
-                "this value can only deserialize to a UnitVariant",
-            )),
-        }
-    }
-}
-
-impl<'de> de::VariantAccess<'de> for LevelDeserializer<'de> {
-    type Error = Error;
-    fn unit_variant(self) -> Result<()> {
-        Ok(())
-    }
-
-    fn newtype_variant_seed<T>(self, seed: T) -> Result<T::Value>
-    where
-        T: de::DeserializeSeed<'de>,
-    {
-        seed.deserialize(self)
-    }
-    fn tuple_variant<V>(self, _len: usize, visitor: V) -> Result<V::Value>
-    where
-        V: de::Visitor<'de>,
-    {
-        de::Deserializer::deserialize_seq(self, visitor)
-    }
-    fn struct_variant<V>(self, _fields: &'static [&'static str], visitor: V) -> Result<V::Value>
-    where
-        V: de::Visitor<'de>,
-    {
-        de::Deserializer::deserialize_map(self, visitor)
-    }
-}
 
 impl<'a> LevelDeserializer<'a> {
     fn into_deserializer(self) -> Result<Deserializer<'a>> {
@@ -180,24 +141,14 @@ impl<'de> de::Deserializer<'de> for LevelDeserializer<'de> {
 
     fn deserialize_enum<V>(
         self,
-        name: &'static str,
-        variants: &'static [&'static str],
-        visitor: V,
+        _name: &'static str,
+        _variants: &'static [&'static str],
+        _visitor: V,
     ) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
     {
-        match self.0 {
-            Level::Nested(map) => {
-                Deserializer::with_map(map).deserialize_enum(name, variants, visitor)
-            }
-            Level::Flat(_) => visitor.visit_enum(self),
-            x => Err(de::Error::custom(format!(
-                "{:?} does not appear to be \
-                 an enum",
-                x
-            ))),
-        }
+        Err(Error::custom("unsupported enum"))
     }
 
     /// given the hint that this is a map, will first

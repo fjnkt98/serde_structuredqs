@@ -1,8 +1,6 @@
-use crate::de::{
-    deserializer::Deserializer,
+use crate::{
+    de::{deserializer::Deserializer, level::Level},
     error::{Error, Result},
-    level::Level,
-    utility::replace_plus,
 };
 
 use serde::de::Error as _;
@@ -12,6 +10,23 @@ use std::collections::BTreeMap;
 use std::iter::Iterator;
 use std::slice::Iter;
 use std::str;
+
+pub(crate) fn replace_plus(input: &[u8]) -> Cow<[u8]> {
+    match input.iter().position(|&b| b == b'+') {
+        None => Cow::Borrowed(input),
+        Some(first_position) => {
+            let mut replaced = input.to_owned();
+            replaced[first_position] = b' ';
+            for byte in &mut replaced[first_position + 1..] {
+                if *byte == b'+' {
+                    *byte = b' ';
+                }
+            }
+
+            Cow::Owned(replaced)
+        }
+    }
+}
 
 /// Parse x-www-form-urlencoded string into structured key-value mappings.
 pub struct Parser<'a> {

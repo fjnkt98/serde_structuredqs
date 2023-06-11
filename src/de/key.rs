@@ -1,7 +1,4 @@
-use crate::de::{
-    error::{Error, Result},
-    level::{Level, LevelDeserializer},
-};
+use crate::error::{Error, Result};
 
 use serde::de::{self, IntoDeserializer};
 use serde::forward_to_deserialize_any;
@@ -22,9 +19,9 @@ macro_rules! forward_parsable_to_deserialize_any {
     }
 }
 
-pub(crate) struct ParsableStringDeserializer<'a>(pub Cow<'a, str>);
+pub(crate) struct KeyDeserializer<'a>(pub Cow<'a, str>);
 
-impl<'de> de::Deserializer<'de> for ParsableStringDeserializer<'de> {
+impl<'de> de::Deserializer<'de> for KeyDeserializer<'de> {
     type Error = Error;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
@@ -32,18 +29,6 @@ impl<'de> de::Deserializer<'de> for ParsableStringDeserializer<'de> {
         V: de::Visitor<'de>,
     {
         self.0.into_deserializer().deserialize_any(visitor)
-    }
-
-    fn deserialize_enum<V>(
-        self,
-        _: &'static str,
-        _: &'static [&'static str],
-        visitor: V,
-    ) -> Result<V::Value>
-    where
-        V: de::Visitor<'de>,
-    {
-        visitor.visit_enum(LevelDeserializer(Level::Flat(self.0)))
     }
 
     forward_to_deserialize_any! {
@@ -56,6 +41,7 @@ impl<'de> de::Deserializer<'de> for ParsableStringDeserializer<'de> {
         string
         unit
         bytes
+        enum
         byte_buf
         unit_struct
         newtype_struct

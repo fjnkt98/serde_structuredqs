@@ -1,8 +1,10 @@
-use crate::de::{
+use crate::{
+    de::{
+        key::KeyDeserializer,
+        level::{Level, LevelDeserializer},
+        parser::Parser,
+    },
     error::{Error, Result},
-    level::{Level, LevelDeserializer},
-    parsablestring::ParsableStringDeserializer,
-    parser::Parser,
 };
 
 use serde::de::{self, Error as _};
@@ -114,12 +116,12 @@ impl<'de> de::Deserializer<'de> for Deserializer<'de> {
         self,
         _name: &'static str,
         _variants: &'static [&'static str],
-        visitor: V,
+        _visitor: V,
     ) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
     {
-        visitor.visit_enum(self)
+        Err(Error::custom("enum"))
     }
 
     forward_to_deserialize_any! {
@@ -156,18 +158,7 @@ impl<'de> de::MapAccess<'de> for Deserializer<'de> {
     {
         if let Some((key, value)) = self.iter.next() {
             self.value = Some(value);
-            let has_bracket = key.contains('[');
-            seed.deserialize(ParsableStringDeserializer(key))
-                .map(Some)
-                .map_err(|e| {
-                    if has_bracket {
-                        de::Error::custom(
-                            format!("{}\nInvalid field contains an encoded bracket -- did you mean to use non-strict mode?\n  https://docs.rs/serde_qs/latest/serde_qs/#strict-vs-non-strict-modes", e,)
-                        )
-                    } else {
-                        e
-                    }
-                })
+            seed.deserialize(KeyDeserializer(key)).map(Some)
         } else {
             Ok(None)
         }
@@ -183,61 +174,6 @@ impl<'de> de::MapAccess<'de> for Deserializer<'de> {
             Err(de::Error::custom(
                 "Somehow the map was empty after a non-empty key was returned",
             ))
-        }
-    }
-}
-
-impl<'de> de::EnumAccess<'de> for Deserializer<'de> {
-    type Error = Error;
-    type Variant = Self;
-
-    fn variant_seed<V>(mut self, seed: V) -> Result<(V::Value, Self::Variant)>
-    where
-        V: de::DeserializeSeed<'de>,
-    {
-        if let Some((key, value)) = self.iter.next() {
-            self.value = Some(value);
-            Ok((seed.deserialize(ParsableStringDeserializer(key))?, self))
-        } else {
-            Err(de::Error::custom("No more values"))
-        }
-    }
-}
-
-impl<'de> de::VariantAccess<'de> for Deserializer<'de> {
-    type Error = Error;
-    fn unit_variant(self) -> Result<()> {
-        Ok(())
-    }
-
-    fn newtype_variant_seed<T>(self, seed: T) -> Result<T::Value>
-    where
-        T: de::DeserializeSeed<'de>,
-    {
-        if let Some(value) = self.value {
-            seed.deserialize(LevelDeserializer(value))
-        } else {
-            Err(de::Error::custom("no value to deserialize"))
-        }
-    }
-    fn tuple_variant<V>(self, _len: usize, visitor: V) -> Result<V::Value>
-    where
-        V: de::Visitor<'de>,
-    {
-        if let Some(value) = self.value {
-            de::Deserializer::deserialize_seq(LevelDeserializer(value), visitor)
-        } else {
-            Err(de::Error::custom("no value to deserialize"))
-        }
-    }
-    fn struct_variant<V>(self, _fields: &'static [&'static str], visitor: V) -> Result<V::Value>
-    where
-        V: de::Visitor<'de>,
-    {
-        if let Some(value) = self.value {
-            de::Deserializer::deserialize_map(LevelDeserializer(value), visitor)
-        } else {
-            Err(de::Error::custom("no value to deserialize"))
         }
     }
 }
