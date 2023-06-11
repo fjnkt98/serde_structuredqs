@@ -1,6 +1,10 @@
 [package]
+authors = ["fjnkt98 <fjnkt98@gmail.com>"]
+description = "A Rust library for serialize/deserialize structured query-string. "
 edition = "2021"
+license = "Apache-2.0"
 name = "serde_structuredqs"
+repository = "https://github.com/fjnkt98/serde_structuredqs"
 version = "0.1.0"
 
 [dependencies]
