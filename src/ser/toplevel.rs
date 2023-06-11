@@ -61,6 +61,7 @@ where
     type SerializeTuple = ser::Impossible<Self::Ok, Error>;
     type SerializeTupleStruct = ser::Impossible<Self::Ok, Error>;
     type SerializeTupleVariant = ser::Impossible<Self::Ok, Error>;
+    // TODO: Adapt this to handle map serialization.
     type SerializeMap = ser::Impossible<Self::Ok, Error>;
     type SerializeStruct = Self;
     type SerializeStructVariant = ser::Impossible<Self::Ok, Error>;
@@ -209,6 +210,7 @@ where
                 Ok(())
             }
             State::WaitingForChildKey(parent_key) => {
+                // Concatenate parent-key and child-key
                 let key = format!("{}.{}", parent_key, key);
                 let serializer = TopLevelSerializer {
                     encoder: self.encoder,
