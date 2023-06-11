@@ -171,7 +171,7 @@ impl<'de> de::MapAccess<'de> for Deserializer<'de> {
         if let Some(v) = self.value.take() {
             seed.deserialize(LevelDeserializer(v))
         } else {
-            Err(de::Error::custom(
+            Err(Error::custom(
                 "Somehow the map was empty after a non-empty key was returned",
             ))
         }

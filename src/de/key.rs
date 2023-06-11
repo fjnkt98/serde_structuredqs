@@ -1,6 +1,6 @@
 use crate::error::{Error, Result};
 
-use serde::de::{self, IntoDeserializer};
+use serde::de::{self, Error as _, IntoDeserializer};
 use serde::forward_to_deserialize_any;
 
 use std::borrow::Cow;
@@ -12,7 +12,7 @@ macro_rules! forward_parsable_to_deserialize_any {
             fn $meth<V>(self, visitor: V) -> Result<V::Value> where V: de::Visitor<'de> {
                 match self.0.parse::<$ty>() {
                     Ok(val) => val.into_deserializer().$meth(visitor),
-                    Err(e) => Err(de::Error::custom(e))
+                    Err(e) => Err(Error::custom(e))
                 }
             }
         )*
