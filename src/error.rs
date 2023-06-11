@@ -4,6 +4,7 @@ use serde::{de, ser};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// Error type for `serde_structuredqs`.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("{0}")]
