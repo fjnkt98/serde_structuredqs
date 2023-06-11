@@ -29,6 +29,50 @@ pub(crate) fn replace_plus(input: &[u8]) -> Cow<[u8]> {
 }
 
 /// Parse x-www-form-urlencoded string into structured key-value mappings.
+///
+/// 1. Initial state
+///
+/// Parser starts to parse from following state
+///
+/// ```plaintext
+///      k e y 1 = v a l u e 1 & k e y 2 . k e y 3 = v a l u e 3 & k e y 2 . k e y 4 = v a l u e 4
+///    ^ ^
+/// head tail
+/// ```
+///
+/// Parser iterates over inner iterator as below
+///
+/// ```plaintext
+///      k e y 1 = v a l u e 1 & k e y 2 . k e y 3 = v a l u e 3 & k e y 2 . k e y 4 = v a l u e 4
+///      ^    ^
+///      tail head
+/// ```
+///
+/// 2. When parser encounter separator character such as `=`, `.`, and `&`
+///
+/// ```plaintext
+///      k e y 1 = v a l u e 1 & k e y 2 . k e y 3 = v a l u e 3 & k e y 2 . k e y 4 = v a l u e 4
+///      ^       ^
+///      tail    head
+/// ```
+///
+/// When parser encounter separator character such as `=`, `.`, and `&`, collect the str from tail to head.
+/// After the collection, tail is positioned one after head, and transit to `parse_map_value`.
+///
+/// ```plaintext
+///      k e y 1 = v a l u e 1 & k e y 2 . k e y 3 = v a l u e 3 & k e y 2 . k e y 4 = v a l u e 4
+///              ^ ^
+///           head tail
+/// ```
+///
+/// 3. Parse Map Value
+///
+/// In `parse_map_value`, check the character pointed by current head.
+///
+/// - the character is `=`, parser should parse the **value** corresponding the key.
+/// - the character is `&`, the value must be empty. Parser simply inserts empty string for the key.
+/// - the character is `.`, the value corresponding the key is structured(nested). So call `parse` method recursively.
+///
 pub struct Parser<'a> {
     inner: &'a [u8],
     iter: Iter<'a, u8>,
