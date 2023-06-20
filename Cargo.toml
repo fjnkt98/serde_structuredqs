@@ -17,4 +17,3 @@ thiserror = "^1.0.40"
 
 [dev-dependencies]
 serde = {version = "^1.0.163", features = ["derive"]}
-serde_derive = "^1.0.163"

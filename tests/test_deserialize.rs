@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod test {
-    use serde_derive::Deserialize;
+    use serde::Deserialize;
 
     #[test]
     fn test_deserialize_flat() {
