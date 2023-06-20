@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod test {
 
-    use serde_derive::Serialize;
+    use serde::Serialize;
 
     #[test]
     fn flat_struct() {
