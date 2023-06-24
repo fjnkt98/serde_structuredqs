@@ -1,4 +1,5 @@
 mod keyvalue;
+mod seq;
 mod toplevel;
 
 use crate::{error::Result, ser::toplevel::TopLevelSerializer};
