@@ -1,14 +1,19 @@
 use crate::{
-    de::deserializer::Deserializer,
+    de::{deserializer::Deserializer, key::KeyDeserializer},
     error::{Error, Result},
 };
 
-use serde::de::{self, Error as _};
-use serde::forward_to_deserialize_any;
+use serde::{
+    de::{self, Error as _},
+    forward_to_deserialize_any,
+};
 
-use std::borrow::Cow;
-use std::collections::btree_map::{BTreeMap, Entry};
-use std::str;
+use std::{
+    borrow::Cow,
+    collections::btree_map::{BTreeMap, Entry},
+    str,
+    vec::IntoIter,
+};
 
 macro_rules! deserialize_primitive {
     ($ty:ident, $method:ident, $visit_method:ident) => {
@@ -151,6 +156,26 @@ impl<'de> de::Deserializer<'de> for LevelDeserializer<'de> {
         Err(Error::custom("unsupported enum"))
     }
 
+    fn deserialize_seq<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>,
+    {
+        match self.0 {
+            Level::Nested(_) => Err(de::Error::custom(format!(
+                "Expected: {:?}, got a Map",
+                stringify!($ty)
+            ))),
+            Level::Invalid(e) => Err(de::Error::custom(e)),
+            Level::UnInitialized => Err(de::Error::custom(
+                "attempted to deserialize uninitialized value",
+            )),
+            Level::Flat(x) => {
+                let seq = CommaSeparated::new(x);
+                visitor.visit_seq(seq)
+            }
+        }
+    }
+
     /// given the hint that this is a map, will first
     /// attempt to deserialize ordered sequences into a map
     /// otherwise, follows the any code path
@@ -186,7 +211,50 @@ impl<'de> de::Deserializer<'de> for LevelDeserializer<'de> {
         identifier
         tuple
         ignored_any
-        seq
+        // seq
         // map
+    }
+}
+
+struct CommaSeparated<'a> {
+    iter: IntoIter<Cow<'a, str>>,
+}
+
+impl<'a> CommaSeparated<'a> {
+    pub fn new(raw: Cow<'a, str>) -> Self {
+        let vec: Vec<Cow<'a, str>> = match raw {
+            Cow::Borrowed(s) => s
+                .split(',')
+                .filter(|s| !s.is_empty())
+                .map(Cow::Borrowed)
+                .collect(),
+            Cow::Owned(s) => s
+                .split(',')
+                .filter(|s| !s.is_empty())
+                .map(|s| Cow::Owned(s.to_owned()))
+                .collect(),
+        };
+
+        Self {
+            iter: vec.into_iter(),
+        }
+    }
+}
+
+impl<'de, 'a: 'de> de::SeqAccess<'de> for CommaSeparated<'a> {
+    type Error = Error;
+
+    fn next_element_seed<T>(
+        &mut self,
+        seed: T,
+    ) -> std::result::Result<Option<T::Value>, Self::Error>
+    where
+        T: de::DeserializeSeed<'de>,
+    {
+        if let Some(element) = self.iter.next() {
+            seed.deserialize(KeyDeserializer(element)).map(Some)
+        } else {
+            Ok(None)
+        }
     }
 }

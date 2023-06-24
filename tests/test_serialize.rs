@@ -93,4 +93,60 @@ mod test {
             )
         )
     }
+
+    #[test]
+    fn serialize_vec() {
+        #[derive(Serialize)]
+        struct MyStruct {
+            a: Vec<String>,
+            b: Option<Vec<String>>,
+            c: Vec<i32>,
+            d: Option<Vec<i32>>,
+        }
+
+        assert_eq!(
+            serde_structuredqs::to_string(&MyStruct {
+                a: vec![String::from("foo"), String::from("bar")],
+                b: Some(vec![String::from("baz")]),
+                c: vec![100, 200],
+                d: Some(vec![300, 400])
+            })
+            .unwrap(),
+            String::from("a=foo%2Cbar&b=baz&c=100%2C200&d=300%2C400")
+        )
+    }
+
+    #[test]
+    fn serialize_vec_of_multi_byte_string() {
+        #[derive(Serialize)]
+        struct MyStruct {
+            a: Vec<String>,
+        }
+
+        assert_eq!(
+            serde_structuredqs::to_string(&MyStruct {
+                a: vec![String::from("ほげ"), String::from("もげ")],
+            })
+            .unwrap(),
+            String::from("a=%E3%81%BB%E3%81%92%2C%E3%82%82%E3%81%92")
+        )
+    }
+
+    #[test]
+    fn serialize_empty_vec() {
+        #[derive(Serialize)]
+        struct MyStruct {
+            a: Vec<String>,
+            b: Option<Vec<String>>,
+        }
+
+        assert_eq!(
+            serde_structuredqs::to_string(&MyStruct {
+                a: vec![],
+                b: Some(vec![])
+            })
+            .unwrap(),
+            String::from("a=&b=")
+        )
+    }
 }

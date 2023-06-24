@@ -6,6 +6,8 @@ use form_urlencoded::Target;
 use serde::{de::Error as _, ser, Serialize};
 use std::borrow::Cow;
 
+use super::seq::SeqSerializer;
+
 /// `TopLevelSerializer` takes struct or map and serialize it.
 pub struct TopLevelSerializer<'input, 'output, T>
 where
@@ -57,7 +59,9 @@ where
     type Ok = &'output mut form_urlencoded::Serializer<'input, T>;
     type Error = Error;
 
-    type SerializeSeq = ser::Impossible<Self::Ok, Error>;
+    // type SerializeSeq = ser::Impossible<Self::Ok, Error>;
+    type SerializeSeq = SeqSerializer<'input, 'output, T>;
+
     type SerializeTuple = ser::Impossible<Self::Ok, Error>;
     type SerializeTupleStruct = ser::Impossible<Self::Ok, Error>;
     type SerializeTupleVariant = ser::Impossible<Self::Ok, Error>;
@@ -148,8 +152,14 @@ where
     {
         Err(Error::custom("top-level serializer supports only struct"))
     }
-    fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq> {
-        Err(Error::custom("top-level serializer supports only struct"))
+    fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq> {
+        match self.state {
+            State::Init => Err(Error::custom("top-level serializer supports only struct")),
+            State::WaitingForChildKey(_) => Err(Error::custom("unexpected state")),
+            State::WaitingForKey => Err(Error::custom("the key has not yet provided")),
+            State::WaitingForValue(key) => Ok(SeqSerializer::new(self.encoder, key, len)),
+        }
+        // Err(Error::custom("top-level serializer supports only struct"))
     }
     fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple> {
         Err(Error::custom("top-level serializer supports only struct"))

@@ -57,4 +57,74 @@ mod test {
         let actual: SearchParams = serde_structuredqs::from_str(source).unwrap();
         assert_eq!(actual, expected)
     }
+
+    #[test]
+    fn deserialize_vec() {
+        #[derive(Debug, Deserialize, Eq, PartialEq)]
+        struct MyStruct {
+            a: Vec<String>,
+            b: Option<Vec<String>>,
+            c: Vec<i32>,
+        }
+
+        let expected = MyStruct {
+            a: vec![
+                String::from("foo"),
+                String::from("bar"),
+                String::from("baz"),
+            ],
+            b: Some(vec![String::from("foo")]),
+            c: vec![100, 200],
+        };
+        let source = "a=foo,bar,baz&b=foo&c=100,200";
+        let actual: MyStruct = serde_structuredqs::from_str(source).unwrap();
+        assert_eq!(actual, expected)
+    }
+
+    #[test]
+    fn deserialize_vec_with_unwise_comma_separated() {
+        #[derive(Debug, Deserialize, Eq, PartialEq)]
+        struct MyStruct {
+            a: Vec<String>,
+        }
+
+        let expected = MyStruct {
+            a: vec![
+                String::from("foo"),
+                String::from("bar"),
+                String::from("baz"),
+            ],
+        };
+        let actual: MyStruct = serde_structuredqs::from_str("a=,,,,foo,,,,,,bar,baz,,,,").unwrap();
+        assert_eq!(actual, expected)
+    }
+
+    #[test]
+    fn deserialize_hollow_vec() {
+        #[derive(Debug, Deserialize, Eq, PartialEq)]
+        struct MyStruct {
+            a: Vec<String>,
+            b: Option<Vec<String>>,
+        }
+
+        let expected = MyStruct {
+            a: vec![],
+            b: Some(vec![]),
+        };
+        let actual: MyStruct = serde_structuredqs::from_str("a=,,,,,&b=,,,,").unwrap();
+        assert_eq!(actual, expected)
+    }
+
+    #[test]
+    fn deserialize_empty_vec() {
+        #[derive(Debug, Deserialize, Eq, PartialEq)]
+        struct MyStruct {
+            a: Vec<String>,
+            b: Option<Vec<String>>,
+        }
+
+        let expected = MyStruct { a: vec![], b: None };
+        let actual: MyStruct = serde_structuredqs::from_str("a=&b=").unwrap();
+        assert_eq!(actual, expected)
+    }
 }
